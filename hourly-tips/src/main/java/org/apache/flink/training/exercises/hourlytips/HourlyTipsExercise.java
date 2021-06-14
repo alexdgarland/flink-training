@@ -18,9 +18,6 @@
 
 package org.apache.flink.training.exercises.hourlytips;
 
-import org.apache.flink.api.common.functions.AggregateFunction;
-import org.apache.flink.api.common.functions.ReduceFunction;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.functions.windowing.ProcessAllWindowFunction;
@@ -61,64 +58,48 @@ public class HourlyTipsExercise extends ExerciseBase {
 		WindowAssigner<Object, TimeWindow> windowAssigner = TumblingEventTimeWindows.of(Time.hours(1));
 
 		SingleOutputStreamOperator<Tuple3<Long, Long, Float>> hourlyMax = fares
-				.keyBy(fare -> fare.driverId)
+				.map(DriverTips::new)
+				.keyBy(t -> t.driverId)
 				.window(windowAssigner)
-				.aggregate(new DriverHourlyTipsAggregate())
+				.reduce(DriverTips::add)
 				.windowAll(windowAssigner)
-				.reduce(new MaxHourlyTipsReduce(), new MaxHourlyTipsWithWindowEnd())
+				.reduce(DriverTips::max, new AddWindowEndToMaxHourlyTips())
 		;
 
 		printOrTest(hourlyMax);
 
-		// execute the transformation pipeline
 		env.execute("Hourly Tips (java)");
 	}
 
-	private static class DriverHourlyTipsAggregate implements AggregateFunction<
-			TaxiFare, Tuple2<Long, Float>, Tuple2<Long, Float>
-			> {
+	private static class DriverTips {
 
-		@Override
-		public Tuple2<Long, Float> createAccumulator() {
-			return new Tuple2<>(null, 0F);
+		public final Long driverId;
+		public final Float tips;
+
+		private DriverTips(Long driverId, Float tips) {
+			this.driverId = driverId;
+			this.tips = tips;
 		}
 
-		@Override
-		public Tuple2<Long, Float> add(TaxiFare value, Tuple2<Long, Float> accumulator) {
-			return new Tuple2<>(value.driverId, accumulator.f1 + value.tip);
+		public DriverTips(TaxiFare fare) {
+			this(fare.driverId, fare.tip);
 		}
 
-		@Override
-		public Tuple2<Long, Float> getResult(Tuple2<Long, Float> accumulator) {
-			return accumulator;
-		}
+		public DriverTips add(DriverTips other) { return new DriverTips(this.driverId, this.tips + other.tips); }
 
-		@Override
-		public Tuple2<Long, Float> merge(Tuple2<Long, Float> a, Tuple2<Long, Float> b) {
-			return new Tuple2<>(a.f0, a.f1 + b.f1);
+		public DriverTips max(DriverTips other) { return this.tips > other.tips ? this : other; }
+
+		public Tuple3<Long, Long, Float> withWindowEnd(Long windowEnd) {
+			return Tuple3.of(windowEnd, this.driverId, this.tips);
 		}
 	}
 
-	private static class MaxHourlyTipsReduce implements ReduceFunction<Tuple2<Long, Float>> {
-
+	private static class AddWindowEndToMaxHourlyTips extends
+			ProcessAllWindowFunction<DriverTips, Tuple3<Long, Long, Float>, TimeWindow> {
 		@Override
-		public Tuple2<Long, Float> reduce(Tuple2<Long, Float> value1, Tuple2<Long, Float> value2)  {
-			return value1.f1 > value2.f1 ? value1 : value2;
+		public void process(Context context, Iterable<DriverTips> elements, Collector<Tuple3<Long, Long, Float>> out) {
+			out.collect(elements.iterator().next().withWindowEnd(context.window().getEnd()));
 		}
-
-	}
-
-	private static class MaxHourlyTipsWithWindowEnd
-			extends ProcessAllWindowFunction<Tuple2<Long, Float>, Tuple3<Long, Long, Float>, TimeWindow> {
-
-		@Override
-		public void process(
-				Context context, Iterable<Tuple2<Long, Float>> elements, Collector<Tuple3<Long, Long, Float>> out
-		) {
-			Tuple2<Long, Float> max = elements.iterator().next();
-			out.collect(Tuple3.of(context.window().getEnd(), max.f0, max.f1));
-		}
-
 	}
 
 }
