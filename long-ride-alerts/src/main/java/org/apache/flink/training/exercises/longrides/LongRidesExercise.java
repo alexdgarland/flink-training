@@ -18,6 +18,8 @@
 
 package org.apache.flink.training.exercises.longrides;
 
+import org.apache.flink.api.common.state.MapState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.TimerService;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -63,18 +65,42 @@ public class LongRidesExercise extends ExerciseBase {
 
 	public static class MatchFunction extends KeyedProcessFunction<Long, TaxiRide, TaxiRide> {
 
+		public static final long TWO_HOURS_AS_MILLIS = 2 * 60 * 60 * 1000;
+
+		MapState<Long, Boolean> rideEndState;
+		MapState<Long, TaxiRide> rideStarts;
+
+		private <V> MapState<Long, V> mapState(String name, Class<V> valueClass) {
+			return getRuntimeContext().getMapState(new MapStateDescriptor<>(name, Long.class, valueClass));
+		}
+
 		@Override
 		public void open(Configuration config) throws Exception {
-			throw new MissingSolutionException();
+			rideEndState = mapState("rideEndState", Boolean.class);
+			rideStarts = mapState("rideStarts", TaxiRide.class);
 		}
 
 		@Override
 		public void processElement(TaxiRide ride, Context context, Collector<TaxiRide> out) throws Exception {
-			TimerService timerService = context.timerService();
+			if (!ride.isStart) {
+				rideEndState.put(ride.rideId, true);
+			}
+			else {
+				rideStarts.put(ride.rideId, ride);
+				TimerService timerService = context.timerService();
+				timerService.registerEventTimeTimer(ride.startTime.toEpochMilli() + TWO_HOURS_AS_MILLIS);
+			}
+
 		}
 
 		@Override
 		public void onTimer(long timestamp, OnTimerContext context, Collector<TaxiRide> out) throws Exception {
+			Long rideId = context.getCurrentKey();
+			if (rideEndState.get(rideId) == null && rideStarts.contains(rideId)) {
+				out.collect(rideStarts.get(rideId));
+			}
+			// Optional for current functional tests but keeps MapState size manageable over time
+			rideStarts.remove(rideId);
 		}
 	}
 }

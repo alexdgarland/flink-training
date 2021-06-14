@@ -94,7 +94,7 @@ public class HourlyTipsExerciseBasedOnSolution extends ExerciseBase {
 	public static class PseudoWindow extends KeyedProcessFunction<Long, TaxiFare, Tuple3<Long, Long, Float>> {
 
 		private final long durationMsec;
-		private transient MapState <Long, Float> sumOfTips;
+		private transient MapState<Long, Float> sumOfTips;
 		private static final OutputTag<TaxiFare> lateFares = new OutputTag<TaxiFare>("lateFares") {};
 
 		public PseudoWindow(Time duration) {
