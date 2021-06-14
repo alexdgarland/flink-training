@@ -20,6 +20,8 @@ package org.apache.flink.training.exercises.longrides;
 
 import org.apache.flink.api.common.state.MapState;
 import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.state.ValueState;
+import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.TimerService;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -67,40 +69,39 @@ public class LongRidesExercise extends ExerciseBase {
 
 		public static final long TWO_HOURS_AS_MILLIS = 2 * 60 * 60 * 1000;
 
-		MapState<Long, Boolean> rideEndState;
-		MapState<Long, TaxiRide> rideStarts;
+		ValueState<Boolean> rideEndState;
+		ValueState<TaxiRide> rideStarts;
 
-		private <V> MapState<Long, V> mapState(String name, Class<V> valueClass) {
-			return getRuntimeContext().getMapState(new MapStateDescriptor<>(name, Long.class, valueClass));
+		private <V> ValueState<V> valueState(String name, Class<V> valueClass) {
+			return getRuntimeContext().getState(new ValueStateDescriptor<>(name, valueClass));
 		}
 
 		@Override
 		public void open(Configuration config) throws Exception {
-			rideEndState = mapState("rideEndState", Boolean.class);
-			rideStarts = mapState("rideStarts", TaxiRide.class);
+			rideEndState = valueState("rideEndState", Boolean.class);
+			rideStarts = valueState("rideStarts", TaxiRide.class);
 		}
 
 		@Override
 		public void processElement(TaxiRide ride, Context context, Collector<TaxiRide> out) throws Exception {
 			if (!ride.isStart) {
-				rideEndState.put(ride.rideId, true);
+				rideEndState.update(true);
 			}
 			else {
-				rideStarts.put(ride.rideId, ride);
+				rideStarts.update(ride);
 				TimerService timerService = context.timerService();
 				timerService.registerEventTimeTimer(ride.startTime.toEpochMilli() + TWO_HOURS_AS_MILLIS);
 			}
-
 		}
 
 		@Override
 		public void onTimer(long timestamp, OnTimerContext context, Collector<TaxiRide> out) throws Exception {
-			Long rideId = context.getCurrentKey();
-			if (rideEndState.get(rideId) == null && rideStarts.contains(rideId)) {
-				out.collect(rideStarts.get(rideId));
+			if (rideEndState.value() == null && rideStarts.value() != null) {
+				out.collect(rideStarts.value());
 			}
 			// Optional for current functional tests but keeps MapState size manageable over time
-			rideStarts.remove(rideId);
+			rideStarts.clear();
 		}
 	}
+
 }
