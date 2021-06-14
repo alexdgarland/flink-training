@@ -41,13 +41,13 @@ The resulting stream should be printed to standard out.
 
 ### Exercise Classes
 
-- Java:  [`org.apache.flink.training.exercises.hourlytips.HourlyTipsExercise`](src/main/java/org/apache/flink/training/exercises/hourlytips/HourlyTipsExercise.java)
+- Java:  [`org.apache.flink.training.exercises.hourlytips.HourlyTipsExerciseUsingReduce`](src/main/java/org/apache/flink/training/exercises/hourlytips/HourlyTipsExercise.java)
 - Scala: [`org.apache.flink.training.exercises.hourlytips.scala.HourlyTipsExercise`](src/main/scala/org/apache/flink/training/exercises/hourlytips/scala/HourlyTipsExercise.scala)
 
 ### Tests
 
-- Java:  [`org.apache.flink.training.exercises.hourlytips.HourlyTipsTest`](src/test/java/org/apache/flink/training/exercises/hourlytips/HourlyTipsTest.java)
-- Scala: [`org.apache.flink.training.exercises.hourlytips.scala.HourlyTipsTest`](src/test/scala/org/apache/flink/training/exercises/hourlytips/scala/HourlyTipsTest.scala)
+- Java:  [`org.apache.flink.training.exercises.hourlytips.AbstractHourlyTipsTest`](src/test/java/org/apache/flink/training/exercises/hourlytips/HourlyTipsTest.java)
+- Scala: [`org.apache.flink.training.exercises.hourlytips.scala.AbstractHourlyTipsTest`](src/test/scala/org/apache/flink/training/exercises/hourlytips/scala/AbstractHourlyTipsTest.scala)
 
 ## Implementation Hints
 

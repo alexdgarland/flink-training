@@ -21,8 +21,8 @@ package org.apache.flink.training.exercises.hourlytips;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.training.exercises.common.datatypes.TaxiFare;
 import org.apache.flink.training.exercises.testing.TaxiRideTestBase;
-import org.apache.flink.training.solutions.hourlytips.HourlyTipsSolution;
 
+import org.apache.flink.training.solutions.hourlytips.HourlyTipsSolution;
 import org.junit.Test;
 
 import java.time.Instant;
@@ -32,9 +32,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 
-public class HourlyTipsTest extends TaxiRideTestBase<Tuple3<Long, Long, Float>> {
-
-	static final Testable JAVA_EXERCISE = () -> HourlyTipsExercise.main(new String[]{});
+abstract class AbstractHourlyTipsTest extends TaxiRideTestBase<Tuple3<Long, Long, Float>> {
 
 	@Test
 	public void testOneDriverOneTip() throws Exception {
@@ -101,9 +99,11 @@ public class HourlyTipsTest extends TaxiRideTestBase<Tuple3<Long, Long, Float>> 
 		return new TaxiFare(0, 0, driverId, startTime, "", tip, 0F, 0F);
 	}
 
-	protected List<Tuple3<Long, Long, Float>> results(TestFareSource source) throws Exception {
+	public abstract Testable javaExercise();
+
+	public List<Tuple3<Long, Long, Float>> results(TestFareSource source) throws Exception {
 		Testable javaSolution = () -> HourlyTipsSolution.main(new String[]{});
-		return runApp(source, new TestSink<>(), JAVA_EXERCISE, javaSolution);
+		return runApp(source, new TestSink<>(), javaExercise(), javaSolution);
 	}
 
 }
