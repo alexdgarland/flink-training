@@ -18,9 +18,14 @@
 
 package org.apache.flink.training.exercises.hourlytips;
 
+import org.apache.flink.api.common.state.MapState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
 import org.apache.flink.api.java.tuple.Tuple3;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.TimerService;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -29,6 +34,7 @@ import org.apache.flink.training.exercises.common.datatypes.TaxiFare;
 import org.apache.flink.training.exercises.common.sources.TaxiFareGenerator;
 import org.apache.flink.training.exercises.common.utils.ExerciseBase;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
 
 /**
  * Java reference implementation for the "Hourly Tips" exercise of the Flink training in the docs.
@@ -56,19 +62,12 @@ public class HourlyTipsExerciseBasedOnSolution extends ExerciseBase {
 		// compute tips per hour for each driver
 		DataStream<Tuple3<Long, Long, Float>> hourlyTips = fares
 				.keyBy((TaxiFare fare) -> fare.driverId)
-				.window(TumblingEventTimeWindows.of(Time.hours(1)))
-				.process(new AddTips());
+//				.window(TumblingEventTimeWindows.of(Time.hours(1)))
+				.process(new PseudoWindow(Time.hours(1)));
 
 		DataStream<Tuple3<Long, Long, Float>> hourlyMax = hourlyTips
 				.windowAll(TumblingEventTimeWindows.of(Time.hours(1)))
 				.maxBy(2);
-
-//		You should explore how this alternative behaves. In what ways is the same as,
-//		and different from, the solution above (using a windowAll)?
-
-// 		DataStream<Tuple3<Long, Long, Float>> hourlyMax = hourlyTips
-// 			.keyBy(t -> t.f0)
-// 			.maxBy(2);
 
 		printOrTest(hourlyMax);
 
@@ -91,4 +90,58 @@ public class HourlyTipsExerciseBasedOnSolution extends ExerciseBase {
 			out.collect(Tuple3.of(context.window().getEnd(), key, sumOfTips));
 		}
 	}
+
+	public static class PseudoWindow extends KeyedProcessFunction<Long, TaxiFare, Tuple3<Long, Long, Float>> {
+
+		private final long durationMsec;
+		private transient MapState <Long, Float> sumOfTips;
+		private static final OutputTag<TaxiFare> lateFares = new OutputTag<TaxiFare>("lateFares") {};
+
+		public PseudoWindow(Time duration) {
+			this.durationMsec = duration.toMilliseconds();
+		}
+
+		@Override
+		public void open(Configuration conf) {
+			MapStateDescriptor<Long, Float> sumDesc = new MapStateDescriptor<>("sumOfTips", Long.class, Float.class);
+			sumOfTips = getRuntimeContext().getMapState(sumDesc);
+		}
+
+		@Override
+		public void processElement(TaxiFare fare, Context ctx, Collector<Tuple3<Long, Long, Float>> out) throws Exception {
+			long eventTime = fare.getEventTime();
+			TimerService timerService = ctx.timerService();
+
+			if (eventTime <= timerService.currentWatermark()) {
+				// This event is late; its window has already been triggered.
+				ctx.output(lateFares, fare);
+			} else {
+				// Round up eventTime to the end of the window containing this event.
+				long endOfWindow = (eventTime - (eventTime % durationMsec) + durationMsec);
+
+				// Schedule a callback for when the window has been completed.
+				timerService.registerEventTimeTimer(endOfWindow);
+
+				// Add this fare's tip to the running total for that window.
+				Float sum = sumOfTips.get(endOfWindow);
+				if (sum == null) {
+					sum = 0.0F;
+				}
+				sum += fare.tip;
+				sumOfTips.put(endOfWindow, sum);
+			}
+		}
+
+		@Override
+		public void onTimer(long timeStamp, OnTimerContext context, Collector<Tuple3<Long, Long, Float>> out) throws Exception {
+			long driverId = context.getCurrentKey();
+			// Look up the result for the hour that just ended.
+			Float sumOfTips = this.sumOfTips.get(timeStamp);
+
+			Tuple3<Long, Long, Float> result = Tuple3.of(timeStamp, driverId, sumOfTips);
+			out.collect(result);
+			this.sumOfTips.remove(timeStamp);
+		}
+	}
+
 }
